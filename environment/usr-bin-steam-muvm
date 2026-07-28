@@ -1,0 +1,7 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+export FEX_HOSTFEATURES=enableavx
+export FEX_SMALLTSCSCALE=false
+unset WAYLAND_DISPLAY
+exec FEX /usr/bin/steam "${@}"

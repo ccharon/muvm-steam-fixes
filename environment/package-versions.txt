@@ -1,0 +1,20 @@
+# Installed versions relevant to both workarounds.
+# Generated with: qlist -ICve <atom>
+
+kernel                           7.1.5-p2-asahi-dist
+host page size                   16384
+guest kernel (libkrunfw)         6.12.87, 4096 byte pages
+
+app-emulation/muvm               app-emulation/muvm-0.6.0 
+dev-libs/libkrun                 dev-libs/libkrun-1.18.0 
+dev-libs/libkrunfw               dev-libs/libkrunfw-5.4.0 
+media-libs/virglrenderer         media-libs/virglrenderer-1.2.0 
+media-libs/mesa                  media-libs/mesa-26.0.8 
+media-libs/vulkan-loader         media-libs/vulkan-loader-1.4.341.0 
+sys-kernel/asahi-kernel          sys-kernel/asahi-kernel-7.1.5_p2 
+sys-apps/dbus                    sys-apps/dbus-1.16.2 
+net-misc/passt                   net-misc/passt-2025.12.15 
+app-emulation/FEX                app-emulation/FEX-2607 
+app-emulation/fex-rootfs-gentoo  app-emulation/fex-rootfs-gentoo-20260401 
+games-util/steam                 games-util/steam-0.0.2 
+x11-apps/mesa-progs              x11-apps/mesa-progs-9.0.0 

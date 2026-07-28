@@ -1,0 +1,8 @@
+games-util/steam::asahi ~arm64
+app-emulation/FEX::asahi ~arm64
+app-emulation/muvm::asahi ~arm64
+dev-libs/libkrun::asahi ~arm64
+dev-libs/libkrunfw::asahi ~arm64
+media-libs/virglrenderer::gentoo ~arm64
+app-emulation/fex-rootfs-gentoo::asahi ~arm64
+<=sys-kernel/linux-headers-6.17-r1::gentoo ~arm64
