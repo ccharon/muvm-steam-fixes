@@ -1,0 +1,106 @@
+From: (fill in)
+Subject: [PATCH] virtio/gpu: prefault dma-buf blob mappings
+
+A blob resource exported as a dma-buf is mapped into the virtio-gpu shm
+region with mmap(MAP_FIXED). The resulting VMA is VM_PFNMAP: it carries no
+struct page and is not managed like ordinary memory.
+
+    fff854810000-fff854814000 rw-s 105cc8000 00:0c 99   /dmabuf:
+    VmFlags: rd wr sh mr mw ms pf de dd
+                              ^^ VM_PFNMAP
+
+KVM cannot fault such memory in on its own. When the guest writes to a page
+of the mapping that has no writable PTE yet, the fault is resolved through
+hva_to_pfn_remapped(), which finds no writable PTE and returns
+KVM_PFN_ERR_RO_FAULT; user_mem_abort() then fails with -EFAULT and KVM_RUN
+tears the VM down:
+
+    ERROR krun_vmm::linux::vstate] Failure during vcpu run: Bad address (os error 14)
+
+On Apple Silicon under muvm this makes every GPU-accelerated workload die the
+moment the guest touches the GPU. Blobs backed by a memfd are unaffected;
+their VMAs have ordinary flags.
+
+Establishing the PTEs is up to the VMM, so walk the fresh mapping once and
+rewrite every page with the value it already holds. Contents are unchanged,
+but a writable PTE exists before the guest ever reaches the page.
+
+Applied only to DMABUF exports, so memfd-backed blobs keep their lazy
+faulting, and only to read-write mappings, where the read-modify-write is
+safe and where the write path in KVM is reachable at all.
+
+MAP_POPULATE would not do: populate_vma_page_range() goes through
+__get_user_pages(), which rejects VM_PFNMAP VMAs in check_vma_flags(), and
+mm_populate() discards the error.
+
+The cost is that every page of a dma-buf blob is faulted in at map time
+instead of on demand.
+
+Assisted-by: Claude Code: opus-5
+
+diff --git a/src/devices/src/virtio/gpu/virtio_gpu.rs b/src/devices/src/virtio/gpu/virtio_gpu.rs
+index 927aa54..75b32ea 100644
+--- a/src/devices/src/virtio/gpu/virtio_gpu.rs
++++ b/src/devices/src/virtio/gpu/virtio_gpu.rs
+@@ -20,7 +20,7 @@ use krun_display::{
+ use libc::c_void;
+ #[cfg(target_os = "macos")]
+ use rutabaga_gfx::RUTABAGA_MEM_HANDLE_TYPE_APPLE;
+-#[cfg(all(feature = "virgl_resource_map2", target_os = "linux"))]
++#[cfg(target_os = "linux")]
+ use rutabaga_gfx::RUTABAGA_MEM_HANDLE_TYPE_DMABUF;
+ #[cfg(all(not(feature = "virgl_resource_map2"), target_os = "linux"))]
+ use rutabaga_gfx::RUTABAGA_MEM_HANDLE_TYPE_OPAQUE_FD;
+@@ -68,6 +68,32 @@ fn sglist_to_rutabaga_iovecs(
+     Ok(rutabaga_iovecs)
+ }
+
++/// A dma-buf mapping is `VM_PFNMAP`, which KVM cannot fault in on its own: on a
++/// guest write to a page that has no writable PTE yet, `hva_to_pfn_remapped()`
++/// returns `KVM_PFN_ERR_RO_FAULT` and `KVM_RUN` fails with `EFAULT`, taking the
++/// VM down. Establishing the PTEs is therefore up to the VMM. Rewriting each
++/// page with the value it already holds leaves the contents untouched.
++///
++/// `MAP_POPULATE` is no substitute; it skips `VM_PFNMAP` VMAs.
++#[cfg(target_os = "linux")]
++fn prefault_dmabuf(addr: *mut c_void, size: usize, prot: i32) {
++    if prot & (libc::PROT_READ | libc::PROT_WRITE) != libc::PROT_READ | libc::PROT_WRITE {
++        return;
++    }
++
++    // SAFETY: `_SC_PAGESIZE` is always available.
++    let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
++
++    for offset in (0..size).step_by(page_size) {
++        // SAFETY: `offset` is within the readable and writable mapping of
++        // `size` bytes that starts at `addr`.
++        unsafe {
++            let page = (addr as *mut u8).add(offset);
++            page.write_volatile(page.read_volatile());
++        }
++    }
++}
++
+ #[derive(PartialEq, Eq, PartialOrd, Ord)]
+ pub enum VirtioGpuRing {
+     Global,
+@@ -800,6 +826,9 @@ impl VirtioGpu {
+                 if ret == libc::MAP_FAILED {
+                     return Err(ErrUnspec);
+                 }
++                if export.handle_type == RUTABAGA_MEM_HANDLE_TYPE_DMABUF {
++                    prefault_dmabuf(ret, resource.size as usize, prot);
++                }
+             } else {
+                 return Err(ErrUnspec);
+             }
+@@ -872,6 +901,9 @@ impl VirtioGpu {
+                     );
+                     return Err(ErrUnspec);
+                 }
++                if export.handle_type == RUTABAGA_MEM_HANDLE_TYPE_DMABUF {
++                    prefault_dmabuf(ret, resource.size as usize, prot);
++                }
+             } else {
+                 self.rutabaga.resource_map(
+                     resource_id,
