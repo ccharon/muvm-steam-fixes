@@ -1,4 +1,4 @@
-# muvm-steam-fixes
+# muvm-steam-fixes, turned out it was a regression in kernel 7.1.5, **fixed in kernel 7.1.6** keeping it just for reference
 
 Two workarounds that make Steam usable under [muvm](https://github.com/AsahiLinux/muvm)
 on Apple Silicon. They are independent and address different bugs.
